@@ -4,6 +4,8 @@ A compact "Daily Visitors" widget for the [Dashboard](https://github.com/GetSimp
 plugin, showing a 30-day visitor chart plus this week's page views and the
 current live visitor count — powered by the [TrafficLens](../../../TrafficLens.php) plugin.
 
+<img width="950" alt="image" src="https://github.com/user-attachments/assets/8ada779a-aec5-44b2-94b9-abf3f53d4e5c" />
+
 ## Requirements
 
 - The **Dashboard** plugin, installed and active
