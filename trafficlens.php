@@ -3,7 +3,7 @@
  * Module Name: TrafficLens
  * Module ID: trafficlens
  * Description: Shows the last 30 days of visitor traffic from TrafficLens, plus this week's page views and the current live visitor count.
- * Version: 1.0
+ * Version: 1.1
  * Default W: 12
  * Default H: 4
  */
@@ -38,6 +38,7 @@ $chart_js_url = $SITEURL . 'plugins/TrafficLens/inc/js/chart.umd.min.js';
 
 // Date labels without the year, per spec: M/D (e.g. 8/5)
 $chart_labels = $has_data ? array_map(function ($d) { return date('n/j', strtotime($d)); }, $data['labels']) : [];
+$live_countries = $data['live_countries'] ?? [];
 ?>
 
 <style>
@@ -86,6 +87,8 @@ $chart_labels = $has_data ? array_map(function ($d) { return date('n/j', strtoti
 }
 #<?php echo $uid ?> .tld-stat-now {
 	background: #eefcf3;
+	position: relative;
+	cursor: default;
 }
 #<?php echo $uid ?> .tld-stat-label {
 	font-size: 11px;
@@ -126,6 +129,44 @@ $chart_labels = $has_data ? array_map(function ($d) { return date('n/j', strtoti
 	padding: 10px 12px;
 	font-size: 13px;
 }
+
+/* Hover popup */
+#<?php echo $uid ?> .tld-live-popup {
+	display: none;
+	position: absolute;
+	bottom: 100%;
+	left: 0;
+	background: #ffffff;
+	border: 1px solid #e2e8f0;
+	border-radius: 6px;
+	box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+	padding: 8px 10px;
+	z-index: 1000;
+	min-width: 160px;
+	max-height: 180px;
+	overflow-y: auto;
+	font-size: 11px;
+	margin-top: 6px;
+}
+#<?php echo $uid ?> .tld-stat-now:hover .tld-live-popup {
+	display: block;
+}
+#<?php echo $uid ?> .tld-live-popup table {
+	width: 100%;
+	border-collapse: collapse;
+}
+#<?php echo $uid ?> .tld-live-popup th,
+#<?php echo $uid ?> .tld-live-popup td {
+	padding: 3px 5px;
+	text-align: left;
+}
+#<?php echo $uid ?> .tld-live-popup th:last-child,
+#<?php echo $uid ?> .tld-live-popup td:last-child {
+	text-align: right;
+}
+#<?php echo $uid ?> .tld-live-popup tr:not(:last-child) {
+	border-bottom: 1px solid #f1f5f9;
+}
 </style>
 
 <div id="<?php echo $uid ?>">
@@ -158,6 +199,30 @@ $chart_labels = $has_data ? array_map(function ($d) { return date('n/j', strtoti
 				<div class="tld-stat-label"><?php echo $i18n_m('tld_lang_Live_Now'); ?></div>
 				<div class="tld-stat-value"><span class="tld-live-dot"></span><?php echo (int)($data['live_now'] ?? 0); ?></div>
 				<div class="tld-stat-sub"><?php echo $i18n_m('tld_lang_Online_Now'); ?></div>
+
+				<!-- Live Countries Popup -->
+				<div class="tld-live-popup">
+					<table>
+						<thead>
+							<tr>
+								<th><?php echo function_exists('i18n_r') ? (i18n_r('TrafficLens/lang_Pdf_Col_Country') ?: 'Country') : 'Country'; ?></th>
+								<th><?php echo function_exists('i18n_r') ? (i18n_r('TrafficLens/lang_Col_Views') ?: 'Views') : 'Views'; ?></th>
+							</tr>
+						</thead>
+						<tbody>
+							<?php if (empty($live_countries)): ?>
+								<tr><td colspan="2" style="text-align:center; color:#999;">-</td></tr>
+							<?php else: ?>
+								<?php foreach ($live_countries as $c): ?>
+									<tr>
+										<td><?php echo $c['flag'] ? $c['flag'] . ' ' : ''; ?><?php echo htmlspecialchars($c['code']); ?></td>
+										<td><?php echo (int)$c['views']; ?></td>
+									</tr>
+								<?php endforeach; ?>
+							<?php endif; ?>
+						</tbody>
+					</table>
+				</div>
 			</div>
 		</div>
 
