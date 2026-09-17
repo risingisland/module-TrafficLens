@@ -3,7 +3,7 @@
  * Module Name: TrafficLens
  * Module ID: trafficlens
  * Description: Shows the last 30 days of visitor traffic from TrafficLens, plus this week's page views and the current live visitor count.
- * Version: 1.1
+ * Version: 1.2
  * Default W: 12
  * Default H: 4
  */
@@ -36,6 +36,8 @@ $has_data = $plugin_ok && $data && array_sum($data['views']) > 0;
 // before include()-ing this module, so it's shared into this file's scope.
 $chart_js_url = $SITEURL . 'plugins/TrafficLens/inc/js/chart.umd.min.js';
 
+$tl_ajax_url = $plugin_ok ? ('?id=' . TrafficLens_SLUG . '&tl_action=get_dashboard_data&range=') : '';
+
 // Date labels without the year, per spec: M/D (e.g. 8/5)
 $chart_labels = $has_data ? array_map(function ($d) { return date('n/j', strtotime($d)); }, $data['labels']) : [];
 $live_countries = $data['live_countries'] ?? [];
@@ -65,6 +67,20 @@ $live_countries = $data['live_countries'] ?? [];
 	white-space: nowrap;
 }
 #<?php echo $uid ?> .tld-link:hover { text-decoration: underline; }
+#<?php echo $uid ?> .tld-header-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+#<?php echo $uid ?> .tld-range {
+	font-size: 12px;
+	padding: 3px 8px;
+	border: 1px solid #ddd;
+	border-radius: 4px;
+	background: #fff;
+	color: #444;
+}
+#<?php echo $uid ?> .tld-range:disabled { opacity: .6; }
 #<?php echo $uid ?> .tld-body {
 	display: flex;
 	gap: 18px;
@@ -179,7 +195,17 @@ $live_countries = $data['live_countries'] ?? [];
 			<?php echo $i18n_m('tld_lang_Title'); ?>
 		</h3>
 		<?php if ($plugin_ok): ?>
-		<a class="tld-link" href="load.php?id=TrafficLens"><?php echo $i18n_m('tld_lang_View_Full'); ?> &rarr;</a>
+		<div class="tld-header-actions">
+			<select id="<?php echo $uid ?>-range" class="tld-range">
+				<option value="today"><?= i18n_r('TrafficLens/lang_Range_Today') ?></option>
+				<option value="7d"><?= i18n_r('TrafficLens/lang_Range_7d') ?></option>
+				<option value="30d" selected><?= i18n_r('TrafficLens/lang_Range_30d') ?></option>
+				<option value="90d"><?= i18n_r('TrafficLens/lang_Range_90d') ?></option>
+				<option value="365d"><?= i18n_r('TrafficLens/lang_Range_365d') ?></option>
+				<option value="all"><?= i18n_r('TrafficLens/lang_Range_All') ?></option>
+			</select>
+			<a class="tld-link" href="load.php?id=TrafficLens"><?php echo $i18n_m('tld_lang_View_Full'); ?> &rarr;</a>
+		</div>
 		<?php endif; ?>
 	</div>
 
@@ -226,56 +252,134 @@ $live_countries = $data['live_countries'] ?? [];
 			</div>
 		</div>
 
-		<?php if (!$has_data): ?>
-			<div class="tld-empty"><?php echo $i18n_m('tld_lang_No_Data'); ?></div>
-		<?php else: ?>
-			<div class="tld-chart-wrap"><canvas id="<?php echo $uid ?>-canvas"></canvas></div>
-		<?php endif; ?>
+		<div class="tld-empty" id="<?php echo $uid ?>-empty"<?php echo $has_data ? ' hidden' : ''; ?>><?php echo $i18n_m('tld_lang_No_Data'); ?></div>
+		<div class="tld-chart-wrap" id="<?php echo $uid ?>-chart-wrap"<?php echo $has_data ? '' : ' hidden'; ?>><canvas id="<?php echo $uid ?>-canvas"></canvas></div>
 	</div>
 	<?php endif; ?>
 </div>
 
-<?php if ($has_data): ?>
+<?php if ($plugin_ok): ?>
 <script src="<?php echo $chart_js_url ?>"></script>
 <script>
 (function () {
-	var canvas = document.getElementById('<?php echo $uid ?>-canvas');
-	if (!canvas || typeof Chart === 'undefined') return;
+	var uid    = '<?php echo $uid ?>';
+	var canvas = document.getElementById(uid + '-canvas');
+	var chart  = null;
 
-	new Chart(canvas.getContext('2d'), {
-		type: 'line',
-		data: {
-			labels: <?php echo json_encode($chart_labels); ?>,
-			datasets: [
-				{
-					label: <?php echo json_encode($i18n_m('tld_lang_Legend_Visitors')); ?>,
-					data: <?php echo json_encode($data['uniques']); ?>,
-					borderColor: '#2764e7',
-					backgroundColor: 'rgba(39,100,231,.08)',
-					fill: true,
-					tension: .25,
-					pointRadius: 0,
-				},
-				{
-					label: <?php echo json_encode($i18n_m('tld_lang_Legend_Views')); ?>,
-					data: <?php echo json_encode($data['views']); ?>,
-					borderColor: '#e67e22',
-					backgroundColor: 'transparent',
-					tension: .25,
-					pointRadius: 0,
-				},
-			],
-		},
-		options: {
-			responsive: true,
-			maintainAspectRatio: false,
-			interaction: { mode: 'index', intersect: false },
-			plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10 } } } },
-			scales: {
-				x: { ticks: { maxRotation: 0, autoSkip: true, font: { size: 9 } } },
-				y: { beginAtZero: true, ticks: { precision: 0, font: { size: 9 } } },
+	function buildChart(labels, uniques, views) {
+		if (!canvas || typeof Chart === 'undefined') return;
+		chart = new Chart(canvas.getContext('2d'), {
+			type: 'line',
+			data: {
+				labels: labels,
+				datasets: [
+					{
+						label: <?php echo json_encode($i18n_m('tld_lang_Legend_Visitors')); ?>,
+						data: uniques,
+						borderColor: '#2764e7',
+						backgroundColor: 'rgba(39,100,231,.08)',
+						fill: true,
+						tension: .25,
+						pointRadius: 0,
+					},
+					{
+						label: <?php echo json_encode($i18n_m('tld_lang_Legend_Views')); ?>,
+						data: views,
+						borderColor: '#e67e22',
+						backgroundColor: 'transparent',
+						tension: .25,
+						pointRadius: 0,
+					},
+				],
 			},
-		},
+			options: {
+				responsive: true,
+				maintainAspectRatio: false,
+				interaction: { mode: 'index', intersect: false },
+				plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10 } } } },
+				scales: {
+					x: { ticks: { maxRotation: 0, autoSkip: true, font: { size: 9 } } },
+					y: { beginAtZero: true, ticks: { precision: 0, font: { size: 9 } } },
+				},
+			},
+		});
+	}
+
+	<?php if ($has_data): ?>
+	buildChart(
+		<?php echo json_encode($chart_labels); ?>,
+		<?php echo json_encode($data['uniques']); ?>,
+		<?php echo json_encode($data['views']); ?>
+	);
+	<?php endif; ?>
+
+	function formatLabel(label, isHourly) {
+		if (isHourly) return label;
+		var parts = String(label).split('-');
+		return parts.length === 3 ? (parseInt(parts[1], 10) + '/' + parseInt(parts[2], 10)) : label;
+	}
+
+	function escapeHtml(s) {
+		return String(s).replace(/[&<>"']/g, function (c) {
+			return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+		});
+	}
+
+	var select  = document.getElementById(uid + '-range');
+	var emptyEl = document.getElementById(uid + '-empty');
+	var wrapEl  = document.getElementById(uid + '-chart-wrap');
+	if (!select) return;
+
+	select.addEventListener('change', function () {
+		var range = select.value;
+		var url   = <?php echo json_encode($tl_ajax_url); ?> + encodeURIComponent(range);
+
+		select.disabled = true;
+		fetch(url, { credentials: 'same-origin' })
+			.then(function (res) { return res.json(); })
+			.then(function (res) {
+				if (!res || !res.ok) return;
+
+				var trend    = res.daily_trend || { labels: [], uniques: [], views: [] };
+				var isHourly = trend.granularity === 'hourly';
+				var hasRows  = trend.labels && trend.labels.length && trend.views.some(function (v) { return v > 0; });
+
+				if (!hasRows) {
+					if (chart) { chart.destroy(); chart = null; }
+					if (emptyEl) emptyEl.hidden = false;
+					if (wrapEl) wrapEl.hidden = true;
+				} else {
+					var labels = trend.labels.map(function (l) { return formatLabel(l, isHourly); });
+					if (emptyEl) emptyEl.hidden = true;
+					if (wrapEl) wrapEl.hidden = false;
+					if (chart) {
+						chart.data.labels = labels;
+						chart.data.datasets[0].data = trend.uniques;
+						chart.data.datasets[1].data = trend.views;
+						chart.update();
+					} else {
+						buildChart(labels, trend.uniques, trend.views);
+					}
+				}
+
+				if (res.stats) {
+					var liveValEl = document.querySelector('#' + uid + ' .tld-stat-now .tld-stat-value');
+					if (liveValEl) {
+						liveValEl.innerHTML = '<span class="tld-live-dot"></span>' + (res.stats.live || 0);
+					}
+					var popupBody = document.querySelector('#' + uid + ' .tld-live-popup tbody');
+					if (popupBody) {
+						var countries = res.stats.live_countries || [];
+						popupBody.innerHTML = !countries.length
+							? '<tr><td colspan="2" style="text-align:center; color:#999;">-</td></tr>'
+							: countries.map(function (c) {
+								return '<tr><td>' + (c.flag ? c.flag + ' ' : '') + escapeHtml(c.code) + '</td><td>' + (c.views | 0) + '</td></tr>';
+							}).join('');
+					}
+				}
+			})
+			.catch(function () { /* leave the previous chart/stat state in place on failure */ })
+			.finally(function () { select.disabled = false; });
 	});
 })();
 </script>
